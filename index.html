@@ -30,6 +30,12 @@ header{padding:22px 0 14px;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:
 h1{margin:0;font-size:22px;letter-spacing:-.01em;font-weight:600}
 h1 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
 .upd{color:var(--muted);font-size:13px;font-family:var(--mono)}
+#refresh{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;font:15px var(--sans);width:28px;height:28px;cursor:pointer;margin-left:6px;padding:0}
+#refresh.spin{animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+.match{display:grid;gap:4px;padding:12px 0;border-bottom:1px solid var(--line)}.match:last-child{border-bottom:0}
+.match .t{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:space-between;align-items:baseline}
+.match .n{font-weight:600}.match .o{font-size:14px}
+.chip.val{background:var(--accent);color:#fff}.chip.near{background:var(--warn-soft);color:var(--warn)}.chip.none{background:var(--bar);color:var(--muted)}
 .banner{background:var(--warn-soft);color:var(--ink);border-left:3px solid var(--warn);padding:9px 12px;font-size:13.5px;border-radius:0 6px 6px 0;margin-bottom:14px}
 nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin:0 0 18px;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
@@ -95,18 +101,20 @@ ul.plain li{margin-bottom:5px}
 <div class="wrap">
 <header>
   <h1>Cuota Objetivo <small>apuestas de prueba · sin dinero real</small></h1>
-  <div class="upd" id="upd">cargando…</div>
+  <div class="upd"><span id="upd">cargando…</span> <button id="refresh" title="Actualizar ahora" aria-label="Actualizar ahora">↻</button></div>
 </header>
 <div class="banner">El bot no apuesta: solo apunta qué habría apostado y mide si sale a cuenta. Con pocas apuestas, el resultado depende sobre todo de la suerte.</div>
 <nav role="tablist" id="tabs">
-  <button role="tab" data-tab="resumen">Resumen</button>
-  <button role="tab" data-tab="semana">Esta semana</button>
+  <button role="tab" data-tab="hoy">Hoy</button>
+  <button role="tab" data-tab="resumen">Mi banca</button>
   <button role="tab" data-tab="apuestas">Apuestas</button>
+  <button role="tab" data-tab="semana">Fin de semana</button>
   <button role="tab" data-tab="desglose">Desglose</button>
   <button role="tab" data-tab="memoria">Memoria</button>
-  <button role="tab" data-tab="como">Cómo funciona</button>
+  <button role="tab" data-tab="como">Ayuda</button>
 </nav>
 
+<section id="hoy" hidden></section>
 <section id="resumen" hidden></section>
 <section id="semana" hidden></section>
 <section id="apuestas" hidden></section>
@@ -214,6 +222,30 @@ function renderSemana(d){
 const LEGMAP={"1":l=>"Gana "+l.home,"2":l=>"Gana "+l.away,"o15":()=>"Más de 1,5 goles","o25":()=>"Más de 2,5 goles","u25":()=>"Menos de 2,5 goles","u35":()=>"Menos de 3,5 goles"};
 function LEGLABEL(l){return esc((LEGMAP[l.key]||(()=>l.key))(l))}
 
+function ago(iso){if(!iso)return"";const m=Math.max(0,Math.round((Date.now()-new Date(iso).getTime())/60000));return m<1?"ahora":m<60?`hace ${m} min`:`hace ${Math.round(m/60)} h`}
+const hhmm=iso=>new Date(iso).toLocaleTimeString("es-ES",{timeZone:tz,hour:"2-digit",minute:"2-digit"});
+function matchRow(m,compact){
+  const b=m.best,chip=!b?"":m.value?`<span class="chip val">Ventaja ${spct(b.edge)}</span>`:b.edge>=0?`<span class="chip near">Casi: ${spct(b.edge)}</span>`:`<span class="chip none">Sin ventaja</span>`;
+  const bet=m.has_bet?` <span class="chip open">Apuesta de prueba abierta</span>`:"";
+  const sc=m.score?`<span class="num" style="margin-right:6px">${m.score[0]}–${m.score[1]}</span>`:"";
+  return `<div class="match"><div class="t"><span class="n">${sc}${esc(m.home)} – ${esc(m.away)}</span><span class="mut">${esc(m.comp)} · ${m.started?(m.phase==="final"?"terminado":"en juego"):hhmm(m.kickoff)}</span></div>
+  ${b&&!m.started&&!compact?`<div class="o">${esc(b.label)} · cuota <b>${nf(b.odds)}</b> en ${esc(b.book)} · el mercado le da ${pct(b.p)} ${chip}${bet}</div>`:""}
+  <div class="mut" style="font-size:13px">Favorito: ${esc(m.fav)} (${pct(m.fav_p)})</div></div>`;
+}
+function renderHoy(d){
+  const t=d.today||[];
+  const upcoming=t.filter(m=>!m.started),live=t.filter(m=>m.started&&m.phase!=="final");
+  const val=upcoming.filter(m=>m.best&&m.best.edge>=0).slice(0,5);
+  const oldest=t.map(m=>m.odds_t).filter(Boolean).sort()[0];
+  const valHtml=val.length?val.map(matchRow).join(""):`<div class="empty">Ahora mismo ningún partido de hoy tiene una cuota que pague más de lo justo. Quedarse fuera también es una decisión.</div>`;
+  const allHtml=t.length?t.map(m=>matchRow(m,true)).join(""):`<div class="empty">No hay partidos de tus competiciones hoy, o el bot aún no ha cargado sus cuotas (lo hace cada mañana).</div>`;
+  $("#hoy").innerHTML=`<div class="banner" style="margin-top:0">Cuotas cargadas ${oldest?ago(oldest)+" ("+hhmm(oldest)+")":"– sin datos"}. Pueden haber cambiado desde entonces: comprueba siempre la cuota real en tu casa antes de apostar.</div>
+  ${live.length?`<h2>En juego</h2><div class="card">${live.map(matchRow).join("")}</div>`:""}
+  <h2>Con más valor ahora</h2><div class="card">${valHtml}</div>
+  <p class="mut" style="font-size:13px;margin:8px 0 0">«Valor» = la cuota paga más de lo que el mercado dice que toca. El bot solo te avisa por Telegram cuando la ventaja pasa del ${pct(d.rules.min_edge)}.</p>
+  <h2>Todos los partidos de hoy</h2><div class="card">${allHtml}</div>`;
+}
+
 let filt="all";
 function renderApuestas(d){
   const rows=d.bets.filter(b=>filt==="all"||(filt==="done"?b.status==="won"||b.status==="lost":b.status===filt));
@@ -271,17 +303,30 @@ function renderComo(d){
 }
 
 function render(d){D=d;
-  $("#upd").textContent="actualizado "+fdate(d.updated,{weekday:undefined});
-  renderResumen(d);renderSemana(d);renderApuestas(d);renderDesglose(d);renderMemoria(d);renderComo(d);
+  tick();
+  renderHoy(d);renderResumen(d);renderSemana(d);renderApuestas(d);renderDesglose(d);renderMemoria(d);renderComo(d);
 }
 function show(tab){
-  const ok=["resumen","semana","apuestas","desglose","memoria","como"];if(!ok.includes(tab))tab="resumen";
+  const ok=["hoy","resumen","semana","apuestas","desglose","memoria","como"];if(!ok.includes(tab))tab="hoy";
   document.querySelectorAll("section").forEach(s=>s.hidden=s.id!==tab);
   document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{show(b.dataset.tab);try{history.replaceState(null,"","#"+b.dataset.tab)}catch(e){}});
 show(location.hash.slice(1));
-fetch("data.json?"+Date.now()).then(r=>r.json()).then(render).catch(()=>{$("#upd").textContent="sin datos todavía"; $("#resumen").innerHTML='<div class="card"><div class="empty">Todavía no hay datos publicados. El bot los genera en su primera ejecución.</div></div>'});
+let lastRaw="",busy=false;
+function load(manual){
+  if(busy)return;busy=true;$("#refresh").classList.add("spin");
+  fetch("data.json?"+Date.now(),{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.text()}).then(txt=>{
+    if(txt!==lastRaw){lastRaw=txt;render(JSON.parse(txt))}else tick();
+  }).catch(()=>{if(!D){$("#upd").textContent="sin datos todavía";$("#hoy").innerHTML='<div class="card"><div class="empty">Todavía no hay datos publicados. El bot los genera en su primera ejecución.</div></div>'}})
+  .finally(()=>{busy=false;setTimeout(()=>$("#refresh").classList.remove("spin"),400)});
+}
+function tick(){if(D)$("#upd").textContent="datos "+ago(D.updated)}
+$("#refresh").onclick=()=>load(true);
+setInterval(()=>{if(!document.hidden)load()},60000);   // se recarga sola cada minuto mientras la miras
+setInterval(tick,30000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+load();
 </script>
 </body>
 </html>

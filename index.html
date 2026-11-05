@@ -36,6 +36,16 @@ h1 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
 .match .t{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:space-between;align-items:baseline}
 .match .n{font-weight:600}.match .o{font-size:14px}
 .chip.val{background:var(--accent);color:#fff}.chip.near{background:var(--warn-soft);color:var(--warn)}.chip.none{background:var(--bar);color:var(--muted)}
+.hero2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:10px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.step .l{font-size:12px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.step .v{font:500 30px/1.15 var(--mono);letter-spacing:-.02em;margin-top:4px}
+.step .s{font-size:13px;color:var(--muted);margin-top:3px}
+.arrow{font-size:20px;color:var(--muted);align-self:center;text-align:center}
+#livebadge{background:var(--loss);color:#fff;border-radius:999px;font:600 11px var(--mono);padding:1px 6px;margin-left:4px}
+.tot td{border-top:2px solid var(--ink);font-weight:600}
+.nx{display:grid;gap:4px;padding:12px 0;border-bottom:1px solid var(--line)}.nx:last-child{border-bottom:0}
+.help{font-size:14px;color:var(--muted)}
 .banner{background:var(--warn-soft);color:var(--ink);border-left:3px solid var(--warn);padding:9px 12px;font-size:13.5px;border-radius:0 6px 6px 0;margin-bottom:14px}
 nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin:0 0 18px;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
@@ -105,8 +115,9 @@ ul.plain li{margin-bottom:5px}
 </header>
 <div class="banner">El bot no apuesta: solo apunta qué habría apostado y mide si sale a cuenta. Con pocas apuestas, el resultado depende sobre todo de la suerte.</div>
 <nav role="tablist" id="tabs">
+  <button role="tab" data-tab="inicio">Inicio</button>
+  <button role="tab" data-tab="vivo">En vivo <span id="livebadge" hidden></span></button>
   <button role="tab" data-tab="hoy">Hoy</button>
-  <button role="tab" data-tab="resumen">Mi banca</button>
   <button role="tab" data-tab="apuestas">Apuestas</button>
   <button role="tab" data-tab="semana">Fin de semana</button>
   <button role="tab" data-tab="desglose">Desglose</button>
@@ -114,8 +125,9 @@ ul.plain li{margin-bottom:5px}
   <button role="tab" data-tab="como">Ayuda</button>
 </nav>
 
+<section id="inicio" hidden></section>
+<section id="vivo" hidden></section>
 <section id="hoy" hidden></section>
-<section id="resumen" hidden></section>
 <section id="semana" hidden></section>
 <section id="apuestas" hidden></section>
 <section id="desglose" hidden></section>
@@ -172,32 +184,47 @@ function readout(d){
   return out.join(" ");
 }
 
-function renderResumen(d){
-  const b=d.bank,c=d.counts,st=d.streak;
-  const streak=st.kind?`${st.n} ${st.kind==="won"?"ganadas":"perdidas"}`:"–";
-  const live=d.live&&d.live.length?`<h2>En directo</h2><div class="live">${d.live.map(m=>`<span>${m.phase==="live"?"<i>● VIVO</i>":""}${esc(m.home)} ${m.score[0]}–${m.score[1]} ${esc(m.away)}</span>`).join("")}</div>`:"";
-  $("#resumen").innerHTML=`${live}
-  <div class="card"><div class="hero">
-    <div><div class="mut" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase">Banca virtual</div><div class="big">${nf(b.now)}<small>€</small></div></div>
-    <div class="delta ${cls(b.pnl)}">${sgn(b.pnl)} € <span class="mut">desde ${nf(b.initial,0)} €</span></div></div>
-    <div style="margin-top:14px">${curveSvg(d.curve,b.initial)}</div>
-    <div class="read">${readout(d)}</div></div>
-  <h2>Números</h2>
-  <div class="grid">
-    ${kpi("Apuestas",c.total,`${c.settled} liquidadas · ${c.open} abiertas`)}
-    ${kpi("Acertadas",`${c.won} de ${c.won+c.lost}`,pct(c.hit),"")}
-    ${kpi("Importe jugado",eur(b.staked),"suma de lo apostado")}
-    ${kpi("Beneficio",sgn(b.pnl)+" €","",cls(b.pnl))}
-    ${kpi("Rendimiento",spct(b.yield),"beneficio / jugado",cls(b.yield))}
-    ${kpi("Ventaja vs cierre",d.clv.avg==null?"–":spct(d.clv.avg,2),`CLV medio · ${d.clv.n} apuestas`,cls(d.clv.avg))}
-    ${kpi("Racha actual",streak,"")}
-    ${kpi("Peor caída",pct(b.drawdown,1),"desde un máximo","")}
+function renderInicio(d){
+  const b=d.bank,c=d.counts;
+  const settled=d.bets.filter(x=>x.status==="won"||x.status==="lost"||x.status==="void");
+  const open=d.bets.filter(x=>x.status==="open");
+  const arrow=x=>x==null?"":x>0?`<span class="gain">▲</span>`:x<0?`<span class="loss">▼</span>`:"■";
+  const ledger=d.bets.length?`<div class="scroll"><table class="tbl"><thead><tr><th>Partido y apuesta</th><th class="num">Apostado</th><th></th><th class="num">Resultado</th></tr></thead><tbody>${
+    d.bets.slice(0,40).map(x=>`<tr><td>${esc(x.match)}<div class="mut" style="font-size:12px">${esc(x.pick)} · cuota ${nf(x.odds)} · ${fdate(x.kickoff)}</div></td><td class="num">${eur(x.stake)}</td><td class="arrow">${x.pnl==null?"…":x.pnl>0?`<span class="gain">▲</span>`:x.pnl<0?`<span class="loss">▼</span>`:"■"}</td><td class="num ${cls(x.pnl)}">${x.pnl==null?`<span class="chip open">En juego o pendiente</span>`:sgn(x.pnl)+" €"}</td></tr>`).join("")}
+    <tr class="tot"><td>TOTAL (${c.total} apuestas)</td><td class="num">${eur(d.bets.reduce((a,x)=>a+x.stake,0))}</td><td class="arrow">${arrow(b.pnl)}</td><td class="num ${cls(b.pnl)}">${sgn(b.pnl)} €</td></tr></tbody></table></div>${d.bets.length>40?`<p class="mut" style="font-size:13px;margin:8px 0 0">Se muestran las 40 más recientes; el total cuenta todas. Ve a «Apuestas» para el listado completo.</p>`:""}`
+    :`<div class="empty">Todavía no hay apuestas. El bot solo apunta una cuando encuentra una cuota que paga más de lo justo, así que hay días sin ninguna. Es lo normal.</div>`;
+  const nx=(d.next&&d.next.length)?d.next.map(n=>`<div class="nx"><div class="row"><b>${esc(n.home)} – ${esc(n.away)}</b><span class="mut">${esc(n.comp)} · ${fdate(n.kickoff)}</span></div>
+    <div>${esc(n.label)} · cuota <b>${nf(n.odds)}</b> en ${esc(n.book)}</div>
+    <div class="mut" style="font-size:13px">El mercado le da ${pct(n.p)} · ventaja <b class="gain">${spct(n.edge)}</b> · importe que apuntaría el bot: <b>${eur(n.stake)}</b></div></div>`).join(""):
+    `<div class="empty">Ahora mismo el bot no ve ninguna apuesta con ventaja suficiente. Si aparece una, te avisa por Telegram y sale aquí.</div>`;
+  const pending=open.length?`<h2>Ya apuntadas, pendientes de jugarse</h2><div class="card">${open.map(x=>`<div class="nx"><div class="row"><b>${esc(x.match)}</b><span class="mut">${fdate(x.kickoff)}</span></div><div>${esc(x.pick)} · cuota ${nf(x.odds)} · ${eur(x.stake)}</div></div>`).join("")}</div>`:"";
+  $("#inicio").innerHTML=`
+  <div class="hero2">
+    <div class="step"><div class="l">Empezamos con</div><div class="v">${eur(b.initial)}</div><div class="s">dinero virtual de partida</div></div>
+    <div class="step"><div class="l">Apostado en total</div><div class="v">${eur(d.bets.reduce((a,x)=>a+x.stake,0))}</div><div class="s">${c.total} apuestas · ${c.won} ganadas · ${c.lost} perdidas · ${c.open} pendientes</div></div>
+    <div class="step"><div class="l">Generado ${arrow(b.pnl)}</div><div class="v ${cls(b.pnl)}">${sgn(b.pnl)} €</div><div class="s">${b.staked?`Por cada 100 € apostados: ${sgn(b.yield*100,1)} €`:"aún sin apuestas cerradas"}</div></div>
+    <div class="step" style="border-color:var(--accent)"><div class="l">Tenemos ahora</div><div class="v">${eur(b.now)}</div><div class="s">${b.now>=b.initial?"▲":"▼"} ${sgn(b.now-b.initial)} € desde el inicio</div></div>
   </div>
+  <div class="card" style="margin-top:12px">${curveSvg(d.curve,b.initial)}<div class="read">${readout(d)}</div></div>
+  <h2>Cada apuesta: lo que se metió y lo que generó</h2><div class="card">${ledger}</div>
+  ${pending}
+  <h2>Lo próximo que apostaría el bot</h2><div class="card">${nx}
+    <p class="mut" style="font-size:13px;margin:10px 0 0">Son apuestas de prueba: el bot no mueve dinero real. Calcula el importe con la regla de «apostar solo un pequeño porcentaje de la banca».</p></div>
+  <h2>Cómo se lee esto</h2><div class="card help">
+    <p><b>▲ verde</b> = esa apuesta ganó dinero. <b>▼ rojo</b> = lo perdió. <b>«Por cada 100 € apostados»</b> es el dato más justo para comparar: cuánto ha dejado cada 100 € jugados.</p>
+    <p style="margin:0">Con pocas apuestas, el resultado es sobre todo suerte. Lo importante a largo plazo es que el bot consiga cuotas mejores que las del mercado (se mide en «Estadísticas»).</p></div>
   <h2>Combinadas de prueba</h2>
-  <div class="grid">
-    ${kpi("Combinadas",d.combo.n,`${d.combo.won} acertadas`)}
-    ${kpi("Beneficio combinadas",sgn(d.combo.pnl)+" €","aparte de la banca",cls(d.combo.pnl))}
-  </div>`;
+  <div class="grid">${kpi("Combinadas",d.combo.n,`${d.combo.won} acertadas`)}${kpi("Beneficio combinadas",sgn(d.combo.pnl)+" €","aparte de la banca",cls(d.combo.pnl))}</div>`;
+}
+
+function renderVivo(d){
+  const live=(d.today||[]).filter(m=>m.started&&m.phase!=="final");
+  const done=(d.today||[]).filter(m=>m.started&&m.phase==="final");
+  const row=m=>`<div class="match"><div class="t"><span class="n"><span class="num">${m.score?m.score[0]+"–"+m.score[1]:"–"}</span> &nbsp;${esc(m.home)} – ${esc(m.away)}</span><span class="mut">${esc(m.comp)}</span></div>${m.has_bet?`<div><span class="chip open">Hay una apuesta de prueba en este partido</span></div>`:""}</div>`;
+  const nl=live.length;const bd=$("#livebadge");bd.hidden=!nl;bd.textContent=nl;
+  $("#vivo").innerHTML=`<h2>Partidos en juego ahora</h2><div class="card">${nl?live.map(row).join(""):`<div class="empty">Ahora mismo no hay ningún partido en juego de tus competiciones.</div>`}</div>
+  ${done.length?`<h2>Terminados hoy</h2><div class="card">${done.map(row).join("")}</div>`:""}
+  <p class="mut" style="font-size:13px;margin-top:12px">El marcador se actualiza cada vez que el bot lo comprueba (cada 20 minutos como mucho, y solo en partidos de la Champions o con apuesta de prueba abierta). No es un marcador al segundo.</p>`;
 }
 
 function pbar(a,x,b){const s=(a||0)+(x||0)+(b||0)||1;return `<div class="pbar" title="${pct(a)} / ${pct(x)} / ${pct(b)}"><i class="a" style="width:${a/s*100}%"></i><i class="b" style="width:${x/s*100}%"></i><i class="c" style="width:${b/s*100}%"></i></div>`}
@@ -240,7 +267,6 @@ function renderHoy(d){
   const valHtml=val.length?val.map(matchRow).join(""):`<div class="empty">Ahora mismo ningún partido de hoy tiene una cuota que pague más de lo justo. Quedarse fuera también es una decisión.</div>`;
   const allHtml=t.length?t.map(m=>matchRow(m,true)).join(""):`<div class="empty">No hay partidos de tus competiciones hoy, o el bot aún no ha cargado sus cuotas (lo hace cada mañana).</div>`;
   $("#hoy").innerHTML=`<div class="banner" style="margin-top:0">Cuotas cargadas ${oldest?ago(oldest)+" ("+hhmm(oldest)+")":"– sin datos"}. Pueden haber cambiado desde entonces: comprueba siempre la cuota real en tu casa antes de apostar.</div>
-  ${live.length?`<h2>En juego</h2><div class="card">${live.map(matchRow).join("")}</div>`:""}
   <h2>Con más valor ahora</h2><div class="card">${valHtml}</div>
   <p class="mut" style="font-size:13px;margin:8px 0 0">«Valor» = la cuota paga más de lo que el mercado dice que toca. El bot solo te avisa por Telegram cuando la ventaja pasa del ${pct(d.rules.min_edge)}.</p>
   <h2>Todos los partidos de hoy</h2><div class="card">${allHtml}</div>`;
@@ -304,10 +330,10 @@ function renderComo(d){
 
 function render(d){D=d;
   tick();
-  renderHoy(d);renderResumen(d);renderSemana(d);renderApuestas(d);renderDesglose(d);renderMemoria(d);renderComo(d);
+  renderInicio(d);renderVivo(d);renderHoy(d);renderSemana(d);renderApuestas(d);renderDesglose(d);renderMemoria(d);renderComo(d);
 }
 function show(tab){
-  const ok=["hoy","resumen","semana","apuestas","desglose","memoria","como"];if(!ok.includes(tab))tab="hoy";
+  const ok=["inicio","vivo","hoy","semana","apuestas","desglose","memoria","como"];if(!ok.includes(tab))tab="inicio";
   document.querySelectorAll("section").forEach(s=>s.hidden=s.id!==tab);
   document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
 }

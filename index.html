@@ -263,11 +263,13 @@ function renderHoy(d){
   const t=d.today||[];
   const upcoming=t.filter(m=>!m.started),live=t.filter(m=>m.started&&m.phase!=="final");
   const val=upcoming.filter(m=>m.best&&m.best.edge>=0).slice(0,5);
+  const sus=upcoming.filter(m=>m.suspect).length;
   const oldest=t.map(m=>m.odds_t).filter(Boolean).sort()[0];
   const valHtml=val.length?val.map(matchRow).join(""):`<div class="empty">Ahora mismo ningún partido de hoy tiene una cuota que pague más de lo justo. Quedarse fuera también es una decisión.</div>`;
   const allHtml=t.length?t.map(m=>matchRow(m,true)).join(""):`<div class="empty">No hay partidos de tus competiciones hoy, o el bot aún no ha cargado sus cuotas (lo hace cada mañana).</div>`;
   $("#hoy").innerHTML=`<div class="banner" style="margin-top:0">Cuotas cargadas ${oldest?ago(oldest)+" ("+hhmm(oldest)+")":"– sin datos"}. Pueden haber cambiado desde entonces: comprueba siempre la cuota real en tu casa antes de apostar.</div>
   <h2>Con más valor ahora</h2><div class="card">${valHtml}</div>
+  ${sus?`<p class="mut" style="font-size:13px;margin:8px 0 0">He descartado ${sus} partido${sus>1?"s":""} con cuotas desmesuradas (más de 6 o con una «ventaja» irreal): casi siempre son errores o cuotas sin dinero detrás.</p>`:""}
   <p class="mut" style="font-size:13px;margin:8px 0 0">«Valor» = la cuota paga más de lo que el mercado dice que toca. El bot solo te avisa por Telegram cuando la ventaja pasa del ${pct(d.rules.min_edge)}.</p>
   <h2>Todos los partidos de hoy</h2><div class="card">${allHtml}</div>`;
 }
